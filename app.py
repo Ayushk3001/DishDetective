@@ -2,7 +2,7 @@ import streamlit as st
 import pandas as pd  
 from backend import run_orchestrator_with_bytes
 
-st.set_page_config(page_title="Image → Recipe + YouTube", page_icon="🍋")
+st.set_page_config(page_title="DishDetective", page_icon="🍋")
 st.title("🍋 Image → Recipe + YouTube Finder")
 
 st.write(
@@ -38,3 +38,4 @@ if uploaded is not None:
             st.info("No YouTube results parsed. Try another image or re-run.")
 else:
     st.info("↑ Upload an image to begin.")
+
