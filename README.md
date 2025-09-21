@@ -1,4 +1,4 @@
-# Image → Recipe + YouTube (Streamlit + Autogen)
+# DishDetective (Streamlit + Autogen)
 
 Two collaborating agents:
 1) **Recipe_Generator**: looks at your uploaded food photo, identifies the dish, and prints a clean recipe (first line `DISH: <name>`).
