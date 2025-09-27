@@ -15,9 +15,9 @@ from typing import List, Dict, Tuple, Any, Optional
 import re, json, ast
 
 load_dotenv()
-api_key = os.getenv("GEMINI_API_KEY")
+api_key = os.getenv("OPENAI_API_KEY")
 
-model_client = OpenAIChatCompletionClient(model="gemini-2.5-flash", api_key=api_key)
+model_client = OpenAIChatCompletionClient(model="gpt-5-nano", api_key=api_key)
 
 # ---------- YouTube tool ----------
 def youtube_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
@@ -218,3 +218,4 @@ def run_orchestrator_with_bytes(image_bytes: bytes) -> Tuple[str, List[Dict[str,
         return (recipe_text, youtube_rows)
 
     return asyncio.run(_run(image_bytes))
+
