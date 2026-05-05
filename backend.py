@@ -1,5 +1,5 @@
 from autogen_agentchat.agents import AssistantAgent
-from autogen_agentchat.messages import TextMessage, MultiModalMessage
+from autogen_agentchat.messages import MultiModalMessage
 from autogen_agentchat.teams import RoundRobinGroupChat
 from autogen_ext.models.openai import OpenAIChatCompletionClient
 from autogen_core import Image as AGImage
@@ -7,17 +7,16 @@ from youtube_search import YoutubeSearch
 from autogen_core.tools import FunctionTool
 from PIL import Image
 from io import BytesIO
-import requests
 from dotenv import load_dotenv
 import os
 import asyncio
+import inspect
+from pathlib import Path
 from typing import List, Dict, Tuple, Any, Optional
 import re, json, ast
 
-load_dotenv()
+load_dotenv(Path(__file__).with_name(".env"))
 api_key = os.getenv("OPENAI_API_KEY")
-
-model_client = OpenAIChatCompletionClient(model="gpt-5-nano", api_key=api_key)
 
 # ---------- YouTube tool ----------
 def youtube_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
@@ -35,47 +34,60 @@ def youtube_search(query: str, max_results: int = 5) -> List[Dict[str, str]]:
         )
     return out
 
-youtube_search_tool = FunctionTool(
-    youtube_search,
-    name="youtube_search",
-    description="Find relevant YouTube recipe videos for a given dish name or recipe query."
-)
+def _build_team() -> Tuple[RoundRobinGroupChat, OpenAIChatCompletionClient]:
+    if not api_key:
+        raise RuntimeError("OPENAI_API_KEY is missing")
 
-# ---------- Agents ----------
-Recipe_Generator = AssistantAgent(
-    name="Recipe_Generator",
-    model_client=model_client,
-    description=("Identifies the dish from an image and writes a clear recipe."),
-    system_message=(
-        "You analyze the provided food image.\n"
-        "1) Output the dish name as the FIRST line exactly like: DISH: <dish name>\n"
-        "2) Then give a concise, step-by-step recipe, with ingredients (with measures) and method.\n"
-        "Keep the output clean and scannable."
-    ),
-)
+    model_client = OpenAIChatCompletionClient(model="gpt-5-nano", api_key=api_key)
+    youtube_search_tool = FunctionTool(
+        youtube_search,
+        name="youtube_search",
+        description="Find relevant YouTube recipe videos for a given dish name or recipe query."
+    )
 
-YT_Searcher = AssistantAgent(
-    name="YT_Searcher",
-    model_client=model_client,
-    description="Finds top YouTube links for the identified dish.",
-    system_message=(
-        "Wait for the previous message to contain the dish identified from the image. "
-        "Read the line that starts with 'DISH:' to get the dish name. "
-        "Then call the tool `youtube_search` with a query like '<dish name> recipe'. "
-        "**Do NOT print raw JSON or Python lists.** "
-        "Return the top 3-5 results as a Markdown table with headers exactly:\n"
-        "| Title | URL | Channel | Duration | Views |\n"
-        "Each row must contain those five columns. "
-        "After the table, end your message with the word: DONE"
-    ),
-    tools=[youtube_search_tool]
-)
+    recipe_generator = AssistantAgent(
+        name="Recipe_Generator",
+        model_client=model_client,
+        description=("Identifies the dish from an image and writes a clear recipe."),
+        system_message=(
+            "You analyze the provided food image.\n"
+            "1) Output the dish name as the FIRST line exactly like: DISH: <dish name>\n"
+            "2) Then give a concise, step-by-step recipe, with ingredients (with measures) and method.\n"
+            "Keep the output clean and scannable."
+        ),
+    )
 
-# ---------- Team ----------
-team = RoundRobinGroupChat(
-    participants=[Recipe_Generator, YT_Searcher],
-    max_turns=4
-)
+    yt_searcher = AssistantAgent(
+        name="YT_Searcher",
+        model_client=model_client,
+        description="Finds top YouTube links for the identified dish.",
+        system_message=(
+            "Wait for the previous message to contain the dish identified from the image. "
+            "Read the line that starts with 'DISH:' to get the dish name. "
+            "Then call the tool `youtube_search` with a query like '<dish name> recipe'. "
+            "**Do NOT print raw JSON or Python lists.** "
+            "Return the top 3-5 results as a Markdown table with headers exactly:\n"
+            "| Title | URL | Channel | Duration | Views |\n"
+            "Each row must contain those five columns. "
+            "After the table, end your message with the word: DONE"
+        ),
+        tools=[youtube_search_tool]
+    )
+
+    team = RoundRobinGroupChat(
+        participants=[recipe_generator, yt_searcher],
+        max_turns=4
+    )
+    return team, model_client
+
+
+async def _close_model_client(model_client: Any) -> None:
+    close = getattr(model_client, "close", None)
+    if close is None:
+        return
+    result = close()
+    if inspect.isawaitable(result):
+        await result
 
 # ---------- Parsers / Extractors ----------
 def _coerce_to_list_of_dicts(s: str) -> List[dict]:
@@ -182,7 +194,11 @@ def run_orchestrator_with_bytes(image_bytes: bytes) -> Tuple[str, List[Dict[str,
         )
 
         try:
-            result = await team.run(task=multi_modal)
+            team, model_client = _build_team()
+            try:
+                result = await team.run(task=multi_modal)
+            finally:
+                await _close_model_client(model_client)
         except Exception as e:
             return (f"Agent run error: {e}", [])
 

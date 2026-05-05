@@ -1,138 +1,137 @@
-# DishDetective (Streamlit + Autogen)
+# DishDetective
 
-Two collaborating agents:
-1) **Recipe_Generator**: looks at your uploaded food photo, identifies the dish, and prints a clean recipe (first line `DISH: <name>`).
-2) **YT_Searcher**: calls a YouTube search **tool** and returns top links as a **table** (Title, URL, Channel, Duration, Views).
+DishDetective is a Streamlit app that turns a food photo into a dish name, a practical recipe, and matching YouTube recipe guides.
 
-Built with **Autogen AgentChat**, **Streamlit**, and a lightweight YouTube search wrapper.
+It uses:
+- Streamlit for the web UI
+- AutoGen AgentChat for the two-agent workflow
+- OpenAI API through `OpenAIChatCompletionClient`
+- `youtube-search` for video guide lookup
 
----
+## What It Does
 
-## Demo
-
-- Upload a food image (JPG/PNG/WebP)
-- Click **Analyze**
-- See the identified dish + recipe and a table of YouTube videos
-
----
+1. Upload a food image in JPG, PNG, or WebP format.
+2. Click **Analyze dish**.
+3. The recipe agent identifies the dish and writes a clean recipe.
+4. The YouTube agent searches for related recipe videos.
+5. The app shows the recipe and video guides in separate tabs.
 
 ## Project Structure
 
-```
+```text
 .
-├── app.py                 # Streamlit UI
-├── backend.py             # Agents, tool, team, and orchestrator
-├── requirements.txt       # Python dependencies
-└── README.md
+|-- app.py            # Streamlit UI
+|-- backend.py        # OpenAI client, AutoGen agents, YouTube tool, orchestrator
+|-- requirements.txt  # Python dependencies
+|-- .env              # Local environment variables, not committed
+`-- README.md
 ```
-
----
 
 ## How It Works
 
-- `backend.py` defines:
-  - **YouTube tool**: `youtube_search(query, max_results)` via `youtube-search`.
-  - **Recipe_Generator**: analyzes the image and writes the recipe (first line `DISH: ...`).
-  - **YT_Searcher**: reads the dish name, calls the tool, and returns results as a table.
-  - **Orchestrator**: `run_orchestrator_with_bytes(image_bytes)` runs both agents and **extracts**:
-    - Recipe text (from the Recipe_Generator message)
-    - YouTube links (from tool events or a Markdown table, with robust fallbacks)
+`backend.py` defines a two-agent pipeline:
 
-- `app.py` (Streamlit) calls the orchestrator and renders:
-  - The **recipe** as Markdown
-  - The **YouTube results** as a **table** (clickable links)
+- `Recipe_Generator` analyzes the uploaded image and returns the dish name plus recipe text. The first line is expected to be `DISH: <name>`.
+- `YT_Searcher` reads the detected dish name, calls the `youtube_search` tool, and returns video results.
+- `run_orchestrator_with_bytes(image_bytes)` runs the pipeline and extracts:
+  - recipe text from the `Recipe_Generator` message
+  - video rows from tool output or a Markdown table fallback
 
----
+Each analysis run creates a fresh OpenAI model client, agents, and group chat team. This avoids reusing async event-loop state between Streamlit button clicks.
 
 ## Quickstart
 
-**Requirements**
-- Python **3.10 – 3.12** (tested on 3.11)
-- An API key exported as `GEMINI_API_KEY` (used by `OpenAIChatCompletionClient`)
+### Requirements
 
-**1) Clone & create a virtual env**
+- Python 3.10 to 3.12
+- An OpenAI API key
+
+### 1. Create And Activate A Virtual Environment
+
 ```bash
-git clone https://github.com/Ayushk3001/Image-to-Recipe-YouTube.git
-cd Image-to-Recipe-YouTube
 python -m venv .venv
-# Windows
-.\.venv\Scriptsctivate
-# macOS/Linux
+```
+
+Windows PowerShell:
+
+```powershell
+.\.venv\Scripts\Activate.ps1
+```
+
+macOS/Linux:
+
+```bash
 source .venv/bin/activate
 ```
 
-**2) Install deps**
+### 2. Install Dependencies
+
 ```bash
 pip install -r requirements.txt
 ```
 
-**3) Create `.env`**
-```
-GEMINI_API_KEY=YOUR_KEY_HERE
+### 3. Create `.env`
+
+Create a `.env` file in this folder:
+
+```env
+OPENAI_API_KEY=your_openai_api_key_here
 ```
 
-**4) Run the app**
+### 4. Run The App
+
 ```bash
 streamlit run app.py
 ```
 
-Open the URL Streamlit prints (usually http://localhost:8501), upload an image, and click **Analyze**.
+Open the Streamlit URL, usually `http://localhost:8501`, upload a food image, and click **Analyze dish**.
 
----
+## Configuration
 
-## requirements.txt
+### Change The OpenAI Model
 
-```
-youtube-search
-autogen-agentchat
-autogen-core
-autogen-ext
-asyncio
-python-dotenv
-openai
-tiktoken
-streamlit
-pillow
-requests
-pandas
+In `backend.py`, update the model name inside `_build_team()`:
+
+```python
+model_client = OpenAIChatCompletionClient(model="gpt-5-nano", api_key=api_key)
 ```
 
-> Note: the import in code is `from dotenv import load_dotenv`, which corresponds to **python-dotenv** on PyPI.
+Use another OpenAI model if your API account and installed AutoGen/OpenAI packages support it.
 
----
+### Change The Number Of Video Results
 
-## Configuration & Customization
+Update the default value in `youtube_search`:
 
-- **Change the model**
-  ```python
-  # backend.py
-  model_client = OpenAIChatCompletionClient(model="gemini-2.5-flash", api_key=api_key)
-  ```
-  Use any model supported by your `autogen-ext` version.
+```python
+def youtube_search(query: str, max_results: int = 5):
+```
 
-- **Adjust conversation depth**
-  ```python
-  team = RoundRobinGroupChat(participants=[Recipe_Generator, YT_Searcher], max_turns=4)
-  ```
+## Dependencies
 
-- **Control YouTube results**
-  - Edit `max_results` inside `youtube_search`
-  - Or tweak the YT agent prompt (e.g., add cuisine keywords)
+Main packages used by the app:
 
----
+- `streamlit`
+- `autogen-agentchat`
+- `autogen-core`
+- `autogen-ext`
+- `openai`
+- `python-dotenv`
+- `youtube-search`
+- `pillow`
+- `pandas`
 
-## Robustness
+## Troubleshooting
 
-The orchestrator avoids relying on “last message wins.” It:
-- Pulls the recipe from the **Recipe_Generator** `TextMessage` (or any message with `DISH:` as fallback).
-- Extracts YouTube data from **tool events** (`ToolCallExecutionEvent` / `ToolCallSummaryMessage`).
-- If the model prints a **Markdown table**, it parses that.
-- If the tool payload appears as a **raw list-of-dicts**, it parses that too.
+If the app says `OPENAI_API_KEY is missing`, make sure:
 
----
+- `.env` exists in the same folder as `backend.py`
+- the key name is exactly `OPENAI_API_KEY`
+- Streamlit was restarted after creating or editing `.env`
+
+If you change code while Streamlit is running, refresh the browser or restart Streamlit so the new backend code is loaded.
 
 ## Acknowledgements
 
-- [Autogen](https://github.com/microsoft/autogen) AgentChat  
-- [Streamlit](https://streamlit.io/)  
+- [AutoGen](https://github.com/microsoft/autogen)
+- [Streamlit](https://streamlit.io/)
 - [`youtube-search`](https://pypi.org/project/youtube-search/)
