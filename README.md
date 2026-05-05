@@ -1,9 +1,10 @@
 # DishDetective
 
-DishDetective is a Streamlit app that turns a food photo into a dish name, a practical recipe, and matching YouTube recipe guides.
+DishDetective turns a food photo into a dish name, a practical recipe, and matching YouTube recipe guides.
 
 It uses:
-- Streamlit for the web UI
+- Streamlit for local development
+- FastAPI for the Vercel deployment entrypoint
 - AutoGen AgentChat for the two-agent workflow
 - OpenAI API through `OpenAIChatCompletionClient`
 - `youtube-search` for video guide lookup
@@ -20,9 +21,11 @@ It uses:
 
 ```text
 .
-|-- app.py            # Streamlit UI
+|-- app.py            # Streamlit UI for local development
 |-- backend.py        # OpenAI client, AutoGen agents, YouTube tool, orchestrator
+|-- index.py          # FastAPI ASGI app used by Vercel
 |-- requirements.txt  # Python dependencies
+|-- vercel.json       # Vercel function settings
 |-- .env              # Local environment variables, not committed
 `-- README.md
 ```
@@ -39,7 +42,7 @@ It uses:
 
 Each analysis run creates a fresh OpenAI model client, agents, and group chat team. This avoids reusing async event-loop state between Streamlit button clicks.
 
-## Quickstart
+## Local Streamlit Quickstart
 
 ### Requirements
 
@@ -86,6 +89,32 @@ streamlit run app.py
 
 Open the Streamlit URL, usually `http://localhost:8501`, upload a food image, and click **Analyze dish**.
 
+## Deploy To Vercel
+
+This repo includes `index.py`, a FastAPI app that exposes the required top-level ASGI variable:
+
+```python
+app = FastAPI(title="DishDetective")
+```
+
+Vercel requires a Python ASGI or WSGI app named `app` in an entrypoint such as `app.py`, `index.py`, or `api/index.py`. The Streamlit file `app.py` is kept for local use, while `index.py` is the deployment entrypoint.
+
+Before deploying, add this environment variable in the Vercel project settings:
+
+```env
+OPENAI_API_KEY=your_openai_api_key_here
+```
+
+Then push to GitHub:
+
+```bash
+git add .
+git commit -m "Add Vercel FastAPI entrypoint"
+git push origin main
+```
+
+Vercel should detect the FastAPI dependency and deploy `index.py`.
+
 ## Configuration
 
 ### Change The OpenAI Model
@@ -111,6 +140,8 @@ def youtube_search(query: str, max_results: int = 5):
 Main packages used by the app:
 
 - `streamlit`
+- `fastapi`
+- `python-multipart`
 - `autogen-agentchat`
 - `autogen-core`
 - `autogen-ext`
@@ -118,7 +149,6 @@ Main packages used by the app:
 - `python-dotenv`
 - `youtube-search`
 - `pillow`
-- `pandas`
 
 ## Troubleshooting
 
@@ -129,6 +159,8 @@ If the app says `OPENAI_API_KEY is missing`, make sure:
 - Streamlit was restarted after creating or editing `.env`
 
 If you change code while Streamlit is running, refresh the browser or restart Streamlit so the new backend code is loaded.
+
+If Vercel says `No python entrypoint found`, make sure `index.py` is committed and contains the top-level FastAPI object named `app`.
 
 ## Acknowledgements
 

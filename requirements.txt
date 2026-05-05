@@ -1,9 +1,11 @@
 youtube-search
 autogen-agentchat
 autogen-core
-autogen-ext
-asyncio
-dotenv
+autogen-ext[openai]
+python-dotenv
 openai
 tiktoken
+pillow
 streamlit
+fastapi
+python-multipart
